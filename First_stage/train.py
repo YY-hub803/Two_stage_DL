@@ -288,7 +288,9 @@ def Interpolation(model,x,y,c,y_mean,y_std,sites_ID,saveFolder,Target_Name,devic
     # 计算需要滑动的总步数
     total_steps = T_total - window_size + 1
 
-    # 初始化全局注意力权重容器 (使用 float32 节省内存)
+    if model_name == 'MoE_LSTM':
+        gate_global = np.zeros((N_nodes, model.num_experts), dtype=np.float32)
+
     # 形状为 [站点数, 总滑窗步数, 窗口大小(120)]
     attention_global = np.zeros((N_nodes, total_steps, window_size), dtype=np.float32)
 
@@ -320,7 +322,15 @@ def Interpolation(model,x,y,c,y_mean,y_std,sites_ID,saveFolder,Target_Name,devic
                 x_tensor = x_tensor.view(B_time * current_n_sites, window_size, -1)
 
                 # 判断模型是否支持输出权重
-                if hasattr(model, 'attn_block'):
+                if model_name == 'MoE_LSTM':
+
+                    preds, g_weights = model(x_tensor, return_gate_weights=True)
+                    # g_weights: [B_time * current_n_sites, num_experts]
+                    g_weights = g_weights.view(B_time, current_n_sites, -1)
+                    # 静态属性不变，直接取时间批次第0个即可
+                    gate_global[site_start:site_end, :] = g_weights[0].cpu().numpy()
+
+                elif hasattr(model, 'attn_block'):
                     preds, attn_weights = model(x_tensor, return_attn=True)
                     # 提取最后一天对过去 120 天的注意力，并重塑回 [B_time, current_n_sites, window_size]
                     attn_weights_np = attn_weights.cpu().numpy()[:, -1, :].reshape(B_time, current_n_sites, window_size)
@@ -340,7 +350,14 @@ def Interpolation(model,x,y,c,y_mean,y_std,sites_ID,saveFolder,Target_Name,devic
                         attention_global[site_start:site_end, t, :] = attn_weights_np[i]
             print(f"站点进度: {site_end}/{N_nodes} 已完成推理.")
     print("滑动预测完成，正在计算平均值...")
-    # 【新增4】：将注意力权重矩阵保存到本地硬盘
+    # 保存门控权重--专家
+    if model_name == 'MoE_LSTM' and saveFolder is not None:
+        site_names = sites_ID["P_nm"].values if isinstance(sites_ID, pd.DataFrame) else sites_ID
+        df_gates = pd.DataFrame(gate_global, index=site_names,
+                                columns=[f'Expert_{i}' for i in range(model.num_experts)])
+        df_gates.to_csv(os.path.join(saveFolder, f'{model_name}_Gate_Weights.csv'))
+        print(f"[*] MoE 专家门控权重已提取并保存！")
+    # 保存注意权重--时间上
     if saveFolder is not None and (hasattr(model, 'attn_block')):
         attn_save_path = os.path.join(saveFolder, f'{model_name}_attention_weights.npy')
         np.save(attn_save_path, attention_global)
@@ -359,11 +376,9 @@ def Interpolation(model,x,y,c,y_mean,y_std,sites_ID,saveFolder,Target_Name,devic
     for i, var_name in enumerate(Target_Name):
         print(f"\n--- 评估变量: {var_name} ---")
 
-        # 4.1 提取数据
         pred_raw = final_outputs[:, :, i]  # [N, T]
         obs_raw = y[:, :, i]  # [N, T]
 
-        # 4.2 反归一化
         try:
             cur_std = y_std.flat[i] if isinstance(y_std, np.ndarray) else y_std
             cur_mean = y_mean.flat[i] if isinstance(y_mean, np.ndarray) else y_mean
@@ -378,18 +393,14 @@ def Interpolation(model,x,y,c,y_mean,y_std,sites_ID,saveFolder,Target_Name,devic
         pred_final = np.expm1(pred_inv)
         obs_final = np.expm1(obs_inv)
 
-        # 4.3 构建 DataFrame 并插补
         df_pred = pd.DataFrame(pred_final, index=site_names).T
         df_obs = pd.DataFrame(obs_final, index=site_names).T
 
-        # 核心插补逻辑：
-        # 1. 拿原始观测数据
-        # 3. fillna: 缺的地方填预测值，不缺的地方保留真实值
         df_obs_clean = df_obs.replace(0, np.nan)
 
         imputed_dfs[var_name] = df_pred
         obs_dfs[var_name] = df_obs
-        # 保存
+
         if saveFolder:
             filePath = saveFolder + '/out_ep' + f"{model_name}" + f'_{var_name}' + '.csv'
             if os.path.exists(filePath):
@@ -400,7 +411,7 @@ def Interpolation(model,x,y,c,y_mean,y_std,sites_ID,saveFolder,Target_Name,devic
         all_valid_obs = []
         all_valid_preds = []
 
-        # 4.4 计算指标
+        #计算指标
         for site in site_names:
             # 只在有真实值的地方计算误差
             mask = (~np.isnan(df_obs_clean[site])) & (~np.isnan(df_pred[site]))
@@ -415,17 +426,16 @@ def Interpolation(model,x,y,c,y_mean,y_std,sites_ID,saveFolder,Target_Name,devic
 
             r2 = r2_score(valid_obs, valid_pred)
             rmse = np.sqrt(mean_squared_error(valid_obs, valid_pred))
-            try:
-                nse = he.evaluator(he.nse, valid_pred, valid_obs)[0]
-                if isinstance(nse, (list, np.ndarray)): nse = nse[0]
-            except:
-                nse = -999
+            nse = he.evaluator(he.nse, valid_pred, valid_obs)[0]
+            kge, r, alpha, beta = he.kge(valid_pred, valid_obs).squeeze()
+            fhv = he.evaluator(he.fhv, valid_pred, valid_obs).squeeze()
 
-            logStr = f'Variable:{var_name}, Site:{site}, R2:{r2:.3f}, NSE:{nse:.3f}, RMSE:{rmse:.3f}'
+
+            logStr = f'Variable:{var_name}, Site:{site}, R2:{r2:.3f}, NSE:{nse:.3f},KGE:{kge:.3f},FHV{fhv:.3f},RMSE:{rmse:.3f}'
             print(logStr)
             if rf: rf.write(logStr + '\n')
 
-        # --- 4.5 计算整体指标 (Overall Performance) ---
+        # --- 计算整体指标 (Overall Performance) ---
         if len(all_valid_obs) > 0:
             # 将所有站点的有效数据拼接到一起
             total_obs = np.concatenate(all_valid_obs)
@@ -435,14 +445,13 @@ def Interpolation(model,x,y,c,y_mean,y_std,sites_ID,saveFolder,Target_Name,devic
                 # 计算整体指标
                 total_r2 = r2_score(total_obs, total_preds)
                 total_rmse = np.sqrt(mean_squared_error(total_obs, total_preds))
-                try:
-                    total_nse = he.evaluator(he.nse, total_preds, total_obs)[0]
-                    if isinstance(total_nse, (list, np.ndarray)): total_nse = total_nse[0]
-                except:
-                    total_nse = -999
+
+                total_nse = he.evaluator(he.nse, total_preds, total_obs)[0]
+                total_kge, total_r, total_alpha, total_beta = he.kge(total_preds, total_obs).squeeze()
+                total_fhv = he.evaluator(he.fhv, total_preds, total_obs).squeeze()
 
                 # 打印并保存
-                logStr_overall = f'Variable:{var_name}, == OVERALL ==, R2:{total_r2:.3f}, NSE:{total_nse:.3f}, RMSE:{total_rmse:.3f}'
+                logStr_overall = f'Variable:{var_name}, == OVERALL ==, R2:{total_r2:.3f}, NSE:{total_nse:.3f},KGE:{total_kge:.3f},FHV:{total_fhv:.3f} RMSE:{total_rmse:.3f}'
                 print(logStr_overall)
                 if rf: rf.write(logStr_overall + '\n')
 

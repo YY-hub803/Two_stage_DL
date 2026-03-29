@@ -208,7 +208,7 @@ class MoE_LSTM(nn.Module):
         self.nc = nc
         self.num_experts = num_experts
         self.hidden_size = hidden_size
-
+        self.num_experts = num_experts
         self.fc_in = nn.Linear(self.nx, hidden_size)
 
         # ---------- Experts ----------
@@ -231,7 +231,7 @@ class MoE_LSTM(nn.Module):
             nn.Linear(16, self.num_experts)
         )
 
-    def forward(self, x):
+    def forward(self, x, return_gate_weights=False):
         B, T, F_dim = x.shape
 
         x_in = F.relu(self.fc_in(x))
@@ -253,5 +253,7 @@ class MoE_LSTM(nn.Module):
         out = torch.sum(expert_stack * gate_weights, dim=-1)  # [B,T,H]
         out = self.mlp(out)
 
+        if return_gate_weights:
+            return out, gate_weights
         return out
 
