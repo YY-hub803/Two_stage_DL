@@ -227,7 +227,6 @@ class MoE_LSTM(nn.Module):
         self.gate = nn.Sequential(
             nn.Linear(self.nc, 16),
             nn.ReLU(),
-            nn.Dropout(drop_rate),
             nn.Linear(16, self.num_experts)
         )
 
@@ -239,7 +238,8 @@ class MoE_LSTM(nn.Module):
         c = x[:, 0, -self.nc:]  # [B, nc]
 
         gate_logits = self.gate(c)  # [B, num_experts]
-        gate_weights = F.softmax(gate_logits, dim=-1)
+        temperature = 0.3
+        gate_weights = F.softmax(gate_logits/temperature, dim=-1)
 
         expert_outputs = []
         for expert in self.experts:

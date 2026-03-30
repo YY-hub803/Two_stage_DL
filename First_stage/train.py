@@ -1,8 +1,6 @@
 import numpy as np
 import pandas as pd
-
-from sklearn.metrics import r2_score,root_mean_squared_error,mean_squared_error
-import hydroeval as he
+import crit
 from datetime import date
 import os
 import time
@@ -329,15 +327,14 @@ def Interpolation(model,x,y,c,y_mean,y_std,sites_ID,saveFolder,Target_Name,devic
                     g_weights = g_weights.view(B_time, current_n_sites, -1)
                     # 静态属性不变，直接取时间批次第0个即可
                     gate_global[site_start:site_end, :] = g_weights[0].cpu().numpy()
-
+                    attn_weights_np = None
                 elif hasattr(model, 'attn_block'):
                     preds, attn_weights = model(x_tensor, return_attn=True)
                     # 提取最后一天对过去 120 天的注意力，并重塑回 [B_time, current_n_sites, window_size]
                     attn_weights_np = attn_weights.cpu().numpy()[:, -1, :].reshape(B_time, current_n_sites, window_size)
                 else:
                     preds = model(x_tensor)
-                    attn_weights_np = None  # 非注意力模型不提取
-
+                    attn_weights_np = None
                 # 恢复形状以便累加: [B_time, current_n_sites, window_size, out_dim]
                 preds = preds.view(B_time, current_n_sites, window_size, out_dim).cpu().numpy()
 
@@ -424,11 +421,11 @@ def Interpolation(model,x,y,c,y_mean,y_std,sites_ID,saveFolder,Target_Name,devic
             all_valid_obs.append(valid_obs)
             all_valid_preds.append(valid_pred)
 
-            r2 = r2_score(valid_obs, valid_pred)
-            rmse = np.sqrt(mean_squared_error(valid_obs, valid_pred))
-            nse = he.evaluator(he.nse, valid_pred, valid_obs)[0]
-            kge, r, alpha, beta = he.kge(valid_pred, valid_obs).squeeze()
-            fhv = he.evaluator(he.fhv, valid_pred, valid_obs).squeeze()
+            r2 = crit.R2(valid_pred, valid_obs)
+            rmse = crit.RMSE(valid_pred, valid_obs)
+            nse = crit.NSE(valid_pred, valid_obs)
+            kge, r, alpha, beta = crit.KGE(valid_pred, valid_obs)
+            fhv = crit.FHV( valid_pred, valid_obs)
 
 
             logStr = f'Variable:{var_name}, Site:{site}, R2:{r2:.3f}, NSE:{nse:.3f},KGE:{kge:.3f},FHV{fhv:.3f},RMSE:{rmse:.3f}'
@@ -443,15 +440,15 @@ def Interpolation(model,x,y,c,y_mean,y_std,sites_ID,saveFolder,Target_Name,devic
 
             if len(total_obs) > 0:
                 # 计算整体指标
-                total_r2 = r2_score(total_obs, total_preds)
-                total_rmse = np.sqrt(mean_squared_error(total_obs, total_preds))
+                total_r2 = crit.R2(total_preds, total_obs)
+                total_rmse = crit.RMSE(total_preds, total_obs)
 
-                total_nse = he.evaluator(he.nse, total_preds, total_obs)[0]
-                total_kge, total_r, total_alpha, total_beta = he.kge(total_preds, total_obs).squeeze()
-                total_fhv = he.evaluator(he.fhv, total_preds, total_obs).squeeze()
+                total_nse = crit.NSE(total_preds, total_obs)
+                total_kge, total_r, total_alpha, total_beta = crit.KGE(total_preds, total_obs)
+                total_fhv = crit.FHV(total_preds, total_obs)
 
                 # 打印并保存
-                logStr_overall = f'Variable:{var_name}, == OVERALL ==, R2:{total_r2:.3f}, NSE:{total_nse:.3f},KGE:{total_kge:.3f},FHV:{total_fhv:.3f} RMSE:{total_rmse:.3f}'
+                logStr_overall = f'Variable:{var_name}, == OVERALL ==, R2:{total_r2:.3f}, NSE:{total_nse:.3f},KGE:{total_kge:.3f},FHV:{total_fhv:.3f}, RMSE:{total_rmse:.3f}'
                 print(logStr_overall)
                 if rf: rf.write(logStr_overall + '\n')
 
