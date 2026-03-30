@@ -8,7 +8,7 @@ import crit
 import shutil
 import glob
 import os
-import General_utils,utils_G
+import General_utils
 import Visualization as vis
 
 
@@ -40,7 +40,7 @@ hyper_params = {
     "drop_rate": 0.1,
     "warmup_epochs":5,
     "base_lr":1e-4,
-    "BACKEND":"STGNNModel", # select model    STGNNModel/ LSTMModel/PhysicsSTGNN/AttPhysicsSTGNN
+    "BACKEND":"PhysicsSTGNN", # select model    STGNNModel/ LSTMModel/PhysicsSTGNN/AttPhysicsSTGNN
     "lossFun":'MixLoss'
 }
 
@@ -139,12 +139,12 @@ y = General_utils.load_timeseries(dir_y, num_sites, date_length)
 
 print('  ------------------------loading edges_info ------------------------------')
 
-edge,weight = utils_G.edge_extract(edge_path,num_sites)
+edge,weight = General_utils.edge_extract(edge_path,num_sites)
 
-if BACKEND in ("PhysicsSTGNN","AttPhysicsSTGNN"):
-    Lag_Matrix_path = os.path.join(dir_input, 'Lag_Matrix.csv')
-    lag_matrix = pd.read_csv(Lag_Matrix_path, header=None)
-    max_lag = int(np.max(lag_matrix))
+Lag_Matrix_path = os.path.join(dir_input, 'Lag_Matrix.csv')
+lag_matrix = pd.read_csv(Lag_Matrix_path, header=None).values
+max_lag = int(np.max(lag_matrix))
+
 print('  ------------------------loading sites_info ------------------------------')
 sites_ID= pd.read_csv(os.path.join(dir_input,"points_info.csv"))
 coords = sites_ID.iloc[:,2:4].values
@@ -182,14 +182,16 @@ val_valid_indices = General_utils.get_valid_window_indices(val_y, hyper_params['
 
 print('  ------------------------ DataLoader ------------------------------')
 
-Train = General_utils.prepare_dataloader(
+Train,A_list = General_utils.prepare_dataloader(
     train_x, train_y, train_valid_indices,
     hyper_params['history_len'], hyper_params['batch_size'],
+    lag_matrix, max_lag,
     shuffle=True)
 
-Val = General_utils.prepare_dataloader(
+Val,_ = General_utils.prepare_dataloader(
     val_x, val_y, val_valid_indices,
     hyper_params['history_len'],  hyper_params['batch_size'],
+    lag_matrix, max_lag,
     shuffle=False)
 
 nx = train_x.shape[-1]
@@ -216,8 +218,6 @@ elif BACKEND in ("PhysicsSTGNN","AttPhysicsSTGNN"):
         hyper_params['hidden_size'],
         hyper_params['num_layers'],
         hyper_params['drop_rate'],
-        lag_matrix,
-        max_lag,
     )
 else:
     raise ValueError(f"Unknown BACKEND type: {BACKEND}")
@@ -242,9 +242,10 @@ print(f">>> 加载原始模型进行插补: {latest_model_path}")
 model_raw = torch.load(latest_model_path)
 x_in = np.concatenate([train_x, val_x], axis=1)
 y_in = np.concatenate([train_y, val_y], axis=1)
+
 Target_Name = list(dir_y.keys())
 y_out, y_true = train.Interpolation(
-    model_raw, val_x, val_y,
+    model_raw, val_x, val_y,A_list,
     y_mean, y_std, sites_ID, dir_output, Target_Name,device,
     hyper_params['history_len'],hyper_params['batch_size']
 )

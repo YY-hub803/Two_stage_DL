@@ -63,16 +63,17 @@ def train_G(model,coords, Train,Val, criterion, num_epochs, device,saveFolder,wa
         model.train()
         total_train_loss = 0
 
-        for batch_X, batch_Y, batch_Mask in Train:
+        for batch_X, batch_Y, batch_Mask,batch_adj in Train:
 
             x = batch_X.to(device)
             y = batch_Y.to(device)
             mask = batch_Mask.to(device)
+            A_list = batch_adj.to(device)
 
             optim.zero_grad()
 
             with autocast(enabled=(device.type == 'cuda')):
-                outputs = model(x)
+                outputs = model(x,A_list)
                 loss = criterion(outputs, y,mask)
 
             scaler.scale(loss).backward()
@@ -90,13 +91,14 @@ def train_G(model,coords, Train,Val, criterion, num_epochs, device,saveFolder,wa
         total_val_loss = 0
         with torch.no_grad():
             with autocast(enabled=(device.type == 'cuda')):
-                for batch_X, batch_Y, batch_Mask in Val:
+                for batch_X, batch_Y, batch_Mask,batch_adj in Val:
 
                     x = batch_X.to(device)
                     y = batch_Y.to(device)
                     mask = batch_Mask.to(device)
+                    A_list = batch_adj.to(device)
 
-                    outputs = model(x)
+                    outputs = model(x,A_list)
                     loss_test = criterion(outputs, y,mask)
                     total_val_loss = total_val_loss + loss_test.item()
 
@@ -144,7 +146,7 @@ def train_G(model,coords, Train,Val, criterion, num_epochs, device,saveFolder,wa
     return model
 
 
-def Interpolation(model,x,y,y_mean,y_std,sites_ID,saveFolder,Target_Name,device,window_size, batch_size):
+def Interpolation(model,x,y,A_list,y_mean,y_std,sites_ID,saveFolder,Target_Name,device,window_size, batch_size):
 
     model.eval()
     model_name = model.__class__.__name__
@@ -187,7 +189,8 @@ def Interpolation(model,x,y,y_mean,y_std,sites_ID,saveFolder,Target_Name,device,
 
             # 2.2 模型推理
             # output shape: [Batch, N, window, Out]
-            batch_preds = model(x_batch_tensor)
+
+            batch_preds = model(x_batch_tensor,A_list)
             batch_preds = batch_preds.detach().cpu().numpy()
 
             # 2.3 累加结果 (Aggregation)
