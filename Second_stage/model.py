@@ -147,11 +147,12 @@ class PhysicsGuidedGCN(nn.Module):
 
         # 调整维度以适应 einsum: [B, T, N, F]
         x_trans = x.permute(0, 2, 1, 3)
+        A_list = A_list.to(dtype=x_trans.dtype, device=x_trans.device)
         # 初始化输出容器 [B, T, N, F]
         out_agg = torch.zeros(B, T, N, F_in, device=x.device)
 
         for lag in range(max_lag):
-            norm_A_k = A_list[:,lag,:].half().to(x.device) # 动态获取矩阵并分配设备
+            norm_A_k = A_list[:,lag,:] # 动态获取矩阵并分配设备
 
             # ==========================================
             # 核心1：构造多重滞后矩阵，实现上游t-1时刻的水流到下游t时刻

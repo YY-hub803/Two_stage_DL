@@ -1,7 +1,5 @@
 import numpy as np
 import pandas as pd
-from sklearn.metrics import r2_score,root_mean_squared_error,mean_squared_error
-import hydroeval as he
 import crit
 import os
 import time
@@ -22,7 +20,7 @@ def loadModel(outFolder, epoch, modelName='model'):
     return model
 
 
-def train_G(model,coords, Train,Val, criterion, num_epochs, device,saveFolder,warmup_epochs,base_lr):
+def train_G(model, Train,Val, criterion, num_epochs, device,saveFolder,warmup_epochs,base_lr):
 
     model = model.to(device)
     criterion = criterion.to(device)
@@ -73,7 +71,10 @@ def train_G(model,coords, Train,Val, criterion, num_epochs, device,saveFolder,wa
             optim.zero_grad()
 
             with autocast(enabled=(device.type == 'cuda')):
-                outputs = model(x,A_list)
+                if model_name in ("PhysicsSTGNN","AttPhysicsSTGNN"):
+                    outputs = model(x,A_list)
+                elif model_name in ("LSTMModel","STGNNModel"):
+                    outputs = model(x)
                 loss = criterion(outputs, y,mask)
 
             scaler.scale(loss).backward()
@@ -98,7 +99,10 @@ def train_G(model,coords, Train,Val, criterion, num_epochs, device,saveFolder,wa
                     mask = batch_Mask.to(device)
                     A_list = batch_adj.to(device)
 
-                    outputs = model(x,A_list)
+                    if model_name in ("PhysicsSTGNN", "AttPhysicsSTGNN"):
+                        outputs = model(x, A_list)
+                    elif model_name in ("LSTMModel","STGNNModel"):
+                        outputs = model(x)
                     loss_test = criterion(outputs, y,mask)
                     total_val_loss = total_val_loss + loss_test.item()
 
@@ -186,11 +190,13 @@ def Interpolation(model,x,y,A_list,y_mean,y_std,sites_ID,saveFolder,Target_Name,
 
             # 堆叠 -> [Batch, N, window, F]
             x_batch_tensor = torch.tensor(np.array(x_batch_list), dtype=torch.float32).to(device)
-
+            A_list_batch = A_list.unsqueeze(0).expand(len(batch_starts), -1,-1,-1)
             # 2.2 模型推理
             # output shape: [Batch, N, window, Out]
-
-            batch_preds = model(x_batch_tensor,A_list)
+            if model_name in ("PhysicsSTGNN", "AttPhysicsSTGNN"):
+                batch_preds = model(x_batch_tensor, A_list_batch)
+            elif model_name in ("LSTMModel","STGNNModel"):
+                batch_preds = model(x_batch_tensor)
             batch_preds = batch_preds.detach().cpu().numpy()
 
             # 2.3 累加结果 (Aggregation)
@@ -265,15 +271,13 @@ def Interpolation(model,x,y,A_list,y_mean,y_std,sites_ID,saveFolder,Target_Name,
             all_valid_obs.append(valid_obs)
             all_valid_preds.append(valid_pred)
 
-            r2 = r2_score(valid_obs, valid_pred)
-            rmse = np.sqrt(mean_squared_error(valid_obs, valid_pred))
-            try:
-                nse = he.evaluator(he.nse, valid_pred, valid_obs)[0]
-                kge, r, alpha, beta = he.kge(valid_pred, valid_obs).squeeze()
-            except:
-                nse = -999
+            r2 = crit.R2(valid_pred, valid_obs)
+            rmse = crit.RMSE(valid_pred, valid_obs)
+            nse = crit.NSE(valid_pred, valid_obs)
+            kge, r, alpha, beta = crit.KGE(valid_pred, valid_obs)
+            fhv = crit.FHV(valid_pred, valid_obs)
 
-            logStr = f'Variable:{var_name}, Site:{site}, R2:{r2:.3f},NSE:{nse:.3f}, KGE:{kge:.3f},  RMSE:{rmse:.3f}'
+            logStr = f'Variable:{var_name}, Site:{site}, R2:{r2:.3f}, NSE:{nse:.3f},KGE:{kge:.3f},FHV:{fhv:.3f},RMSE:{rmse:.3f}'
             print(logStr)
             if rf: rf.write(logStr + '\n')
         # --- 计算整体指标 ---
@@ -283,15 +287,14 @@ def Interpolation(model,x,y,A_list,y_mean,y_std,sites_ID,saveFolder,Target_Name,
             total_preds = np.concatenate(all_valid_preds)
 
             if len(total_obs) > 0:
-                total_r2 = r2_score(total_obs, total_preds)
-                total_rmse = np.sqrt(mean_squared_error(total_obs, total_preds))
-                try:
-                    total_nse = he.evaluator(he.nse, total_preds, total_obs)[0]
-                    kge, r, alpha, beta = he.kge(total_preds, total_obs).squeeze()
-                except:
-                    total_nse = -999
+                total_r2 = crit.R2(total_preds, total_obs)
+                total_rmse = crit.RMSE(total_preds, total_obs)
 
-                logStr_overall = f'Variable:{var_name}, == OVERALL ==, R2:{total_r2:.3f}, NSE:{total_nse:.3f}, KGE:{kge:.3f}, RMSE:{total_rmse:.3f}'
+                total_nse = crit.NSE(total_preds, total_obs)
+                total_kge, total_r, total_alpha, total_beta = crit.KGE(total_preds, total_obs)
+                total_fhv = crit.FHV(total_preds, total_obs)
+
+                logStr_overall = f'Variable:{var_name}, == OVERALL ==, R2:{total_r2:.3f}, NSE:{total_nse:.3f},KGE:{total_kge:.3f},FHV:{total_fhv:.3f}, RMSE:{total_rmse:.3f}'
                 print(logStr_overall)
                 if rf: rf.write(logStr_overall + '\n')
     if rf: rf.close()

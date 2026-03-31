@@ -229,7 +229,7 @@ lossFun = Loss_FACTORY[hyper_params['lossFun']]()
 
 
 model_test = train.train_G(
-    model, coords,Train, Val,lossFun, hyper_params['epoch_run'], device, dir_output,
+    model,Train, Val,lossFun, hyper_params['epoch_run'], device, dir_output,
     hyper_params['warmup_epochs'], hyper_params['base_lr'])
 
 model_files = glob.glob(os.path.join(dir_output, "*.pt"))
