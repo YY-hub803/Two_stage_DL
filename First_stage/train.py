@@ -428,7 +428,7 @@ def Interpolation(model,x,y,c,y_mean,y_std,sites_ID,saveFolder,Target_Name,devic
             fhv = crit.FHV( valid_pred, valid_obs)
 
 
-            logStr = f'Variable:{var_name}, Site:{site}, R2:{r2:.3f}, NSE:{nse:.3f},KGE:{kge:.3f},FHV{fhv:.3f},RMSE:{rmse:.3f}'
+            logStr = f'Variable:{var_name}, Site:{site}, R2:{r2:.3f}, NSE:{nse:.3f},KGE:{kge:.3f},FHV:{fhv:.3f},RMSE:{rmse:.3f}'
             print(logStr)
             if rf: rf.write(logStr + '\n')
 

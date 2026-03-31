@@ -201,7 +201,7 @@ class ATCLSTMModel(nn.Module):
 
 #------------------------------
 class MoE_LSTM(nn.Module):
-    def __init__(self, nx, ny, nc, hidden_size, drop_rate, num_experts=3):
+    def __init__(self, nx, ny, nc, hidden_size, drop_rate, num_experts=2):
         super().__init__()
         self.nx = nx
         self.ny = ny
@@ -225,9 +225,9 @@ class MoE_LSTM(nn.Module):
         )
 
         self.gate = nn.Sequential(
-            nn.Linear(self.nc, 16),
+            nn.Linear(self.nc, 8),
             nn.ReLU(),
-            nn.Linear(16, self.num_experts)
+            nn.Linear(8, self.num_experts)
         )
 
     def forward(self, x, return_gate_weights=False):
@@ -238,7 +238,7 @@ class MoE_LSTM(nn.Module):
         c = x[:, 0, -self.nc:]  # [B, nc]
 
         gate_logits = self.gate(c)  # [B, num_experts]
-        temperature = 0.3
+        temperature = 0.1
         gate_weights = F.softmax(gate_logits/temperature, dim=-1)
 
         expert_outputs = []
