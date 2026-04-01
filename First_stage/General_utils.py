@@ -15,7 +15,7 @@ def load_timeseries(dict_data, chem_site, chem_length):
 def load_attribute(dict_data):
     """Load data from constant attributes"""
     data_list = [np.loadtxt(path, delimiter=",", skiprows=1) for path in dict_data.values()]
-    return np.concatenate(data_list, axis=1)
+    return np.hstack(data_list)
 
 def preprocess_dynamic_data(data, log_indices=None, train_indices=None):
     """

@@ -35,13 +35,13 @@ hyper_params = {
     "epoch_save": 10,
     "hidden_size": 512,
     'history_len': 120,
-    "batch_size":128,
+    "batch_size":256,
     "num_layers" : 2,
     "drop_rate": 0.1,
     "warmup_epochs":5,
     "base_lr":1e-4,
     "BACKEND":"PhysicsSTGNN", # select model    STGNNModel/ LSTMModel/PhysicsSTGNN/AttPhysicsSTGNN
-    "lossFun":'MixLoss'
+    "lossFun":'RMSE'
 }
 
 
@@ -49,7 +49,6 @@ MODEL_FACTORY = {
     "LSTMModel": model.LSTMModel,
     "STGNNModel": model.STGNNModel,
     "PhysicsSTGNN":model.PhysicsSTGNN,
-    "AttPhysicsSTGNN":model.AttPhysicsSTGNN
 }
 Loss_FACTORY = {
     "MSE": crit.MSELoss,
@@ -91,7 +90,7 @@ date_length = len(full_date_range)
 print("---------------------划分窗格及数据集---------------------")
 train_rate = 0.7
 val_rate = 0.3
-train_end = int(date_length * 0.7)
+train_end = int(date_length * train_rate)
 val_date_range = full_date_range[train_end:,]
 
 #------------------------------------- load data -----------------------------------------------------------------------
@@ -99,7 +98,8 @@ print("------------------------ load path ------------------------------")
 
 dir_x = {
     "x_dix":os.path.join(dir_input, 'input_xforce_dis.csv'),
-    "x_flux": os.path.join(dir_input, 'input_xforce_flux.csv'),
+    # "x_flux": os.path.join(dir_input, 'input_xforce_flux.csv'),
+    "x_tp": os.path.join(dir_input, 'input_xforce_tp.csv'),
 }
 
 dir_c = {
@@ -109,7 +109,7 @@ dir_c = {
 dir_y = {
     # "Flux": os.path.join(dir_input, 'input_yobs_Flux.csv'),
     "DIS": os.path.join(dir_input, 'input_yobs_Dis.csv'),
-    "TP": os.path.join(dir_input, 'input_yobs_Tp.csv')
+    # "TP": os.path.join(dir_input, 'input_yobs_Tp.csv')
 }
 
 
@@ -212,7 +212,7 @@ elif BACKEND in ("STGNNModel"):
         hyper_params['drop_rate'],
         device
     )
-elif BACKEND in ("PhysicsSTGNN","AttPhysicsSTGNN"):
+elif BACKEND in ("PhysicsSTGNN"):
     model = MODEL_FACTORY[BACKEND](
         nx, ny,
         hyper_params['hidden_size'],

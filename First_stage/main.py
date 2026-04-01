@@ -222,8 +222,8 @@ c_test = c_norm[test_sites, :]
 sites_ID_test = sites_ID.iloc[test_sites].copy()
 
 y_out, y_true = train.Interpolation(
-    model_raw, x_test,y_test,c_test,
-    y_mean, y_std, sites_ID_test, dir_output, Target_Name,device,
+    model_raw, x_norm,y_norm,c_norm,
+    y_mean, y_std, sites_ID, dir_output, Target_Name,device,
     hyper_params['history_len'])
 
 # ------------------------ 可视化部分 ------------------------------

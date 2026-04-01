@@ -152,7 +152,7 @@ class PhysicsGuidedGCN(nn.Module):
         out_agg = torch.zeros(B, T, N, F_in, device=x.device)
 
         for lag in range(max_lag):
-            norm_A_k = A_list[:,lag,:] # 动态获取矩阵并分配设备
+            norm_A_k = A_list[:,lag,:]
 
             # ==========================================
             # 核心1：构造多重滞后矩阵，实现上游t-1时刻的水流到下游t时刻
@@ -202,36 +202,4 @@ class PhysicsSTGNN(nn.Module):
         return out.reshape(B, N, T, -1)
 
 
-class AttPhysicsSTGNN(nn.Module):
-    def __init__(self, nx,ny,  hidden_size,num_layer,drop_rate, lag_matrix, max_lag):
-        super(AttPhysicsSTGNN, self).__init__()
-        self.nx = nx
-        self.ny = ny
-        self.hidden_size = hidden_size
-        A_list = build_adj_from_lag_matrix(lag_matrix, max_lag)
-
-        self.fc = nn.Linear(self.nx, self.hidden_size )
-        self.gcn = PhysicsGuidedGCN(self.hidden_size, self.hidden_size, A_list)
-
-        self.lstm = nn.LSTM(self.hidden_size , self.hidden_size , num_layers=num_layer, batch_first=True)
-        self.attn_block = AttentionBlock(self.hidden_size, 4, drop_rate)
-        self.mlp = nn.Sequential(
-            nn.Linear(self.hidden_size*2 , self.hidden_size ),
-            nn.ReLU(),
-            nn.Linear(self.hidden_size , self.ny)
-        )
-
-    def forward(self, x):
-        # x: [B, N, T, F]
-        B, N, T, nF = x.shape
-        S_in = F.relu(self.fc(x))
-        gnn_out = self.gcn(S_in)
-        T_in = gnn_out.reshape(B*N, T, -1)
-        lstm_out, (_,c) = self.lstm(T_in)
-        attn_out = self.attn_block(lstm_out)
-        h_lstm = attn_out.reshape(B, N, T, -1)
-        combined = torch.cat([h_lstm, gnn_out], dim=-1)
-        out = self.mlp(combined)
-
-        return out.reshape(B, N, T, -1)
 

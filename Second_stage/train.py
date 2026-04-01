@@ -71,7 +71,7 @@ def train_G(model, Train,Val, criterion, num_epochs, device,saveFolder,warmup_ep
             optim.zero_grad()
 
             with autocast(enabled=(device.type == 'cuda')):
-                if model_name in ("PhysicsSTGNN","AttPhysicsSTGNN"):
+                if model_name in ("PhysicsSTGNN"):
                     outputs = model(x,A_list)
                 elif model_name in ("LSTMModel","STGNNModel"):
                     outputs = model(x)
@@ -99,7 +99,7 @@ def train_G(model, Train,Val, criterion, num_epochs, device,saveFolder,warmup_ep
                     mask = batch_Mask.to(device)
                     A_list = batch_adj.to(device)
 
-                    if model_name in ("PhysicsSTGNN", "AttPhysicsSTGNN"):
+                    if model_name in ("PhysicsSTGNN",):
                         outputs = model(x, A_list)
                     elif model_name in ("LSTMModel","STGNNModel"):
                         outputs = model(x)
@@ -193,7 +193,7 @@ def Interpolation(model,x,y,A_list,y_mean,y_std,sites_ID,saveFolder,Target_Name,
             A_list_batch = A_list.unsqueeze(0).expand(len(batch_starts), -1,-1,-1)
             # 2.2 模型推理
             # output shape: [Batch, N, window, Out]
-            if model_name in ("PhysicsSTGNN", "AttPhysicsSTGNN"):
+            if model_name in ("PhysicsSTGNN"):
                 batch_preds = model(x_batch_tensor, A_list_batch)
             elif model_name in ("LSTMModel","STGNNModel"):
                 batch_preds = model(x_batch_tensor)

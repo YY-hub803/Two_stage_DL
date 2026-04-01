@@ -116,7 +116,7 @@ hyper_params = {
     "epoch_run": 500,
     "hidden_size": 512,
     'history_len': 365,
-    "batch_size":430,
+    "batch_size":128,
     "drop_rate": 0.3,
     "warmup_epochs":10,
     "base_lr":1e-4,
