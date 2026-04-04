@@ -10,7 +10,7 @@ import glob
 import os
 import General_utils
 import Visualization as vis
-
+from explain import quantify_pct,quantify_global_pct
 
 def set_seeds(seed_value):
     """Set seeds for reproducibility."""
@@ -73,7 +73,8 @@ dir_proj = f"data"
 work_path = os.getcwd()
 dir_input = os.path.join(work_path, dir_proj)
 dir_output = os.path.join("OutPut",dir_model)
-
+analysis_dir = os.path.join("Explanation",dir_model)
+os.makedirs(analysis_dir, exist_ok=True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -240,6 +241,8 @@ latest_model_path = max(model_files, key=os.path.getmtime)
 
 print(f">>> 加载原始模型进行插补: {latest_model_path}")
 model_raw = torch.load(latest_model_path)
+
+
 x_in = np.concatenate([train_x, val_x], axis=1)
 y_in = np.concatenate([train_y, val_y], axis=1)
 
@@ -249,6 +252,15 @@ y_out, y_true = train.Interpolation(
     y_mean, y_std, sites_ID, dir_output, Target_Name,device,
     hyper_params['history_len'],hyper_params['batch_size']
 )
+
+
+# ------------------------ 解释部分 ------------------------------
+
+station_nm = sites_ID.iloc[:,1].tolist()
+target_nodel_idx = 10
+target_index_idx = 500
+proportion_matrix = quantify_pct(model_raw,val_x,A_list,target_nodel_idx,target_index_idx,station_nm,val_date_range,analysis_dir)
+global_proportion = quantify_global_pct(model_raw,val_x,A_list,target_nodel_idx,station_nm,analysis_dir)
 
 # ------------------------ 可视化部分 ------------------------------
 if 'y_out' in locals():
